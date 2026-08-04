@@ -19,7 +19,11 @@
  * Never writes user settings.
  */
 
-import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	Theme,
+} from "@earendil-works/pi-coding-agent";
 import type { OverlayHandle, TUI } from "@earendil-works/pi-tui";
 import { matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import * as fs from "fs";
@@ -54,33 +58,36 @@ let inputUnsub: (() => void) | null = null;
 
 /** Extract the complete accumulated thinking text from an assistant message. */
 function extractThinking(message: unknown): string {
-  // AgentMessage = Message | CustomAgentMessages[...] — custom members (e.g.
-  // BashExecutionMessage) have no `content` or non-array shapes, so read defensively.
-  const content = (message as { content?: unknown } | null)?.content;
-  if (!Array.isArray(content)) return "";
-  const parts = content as Array<{ type?: string; thinking?: string }>;
-  return parts
-    .filter((c) => c.type === "thinking")
-    .map((c) => c.thinking ?? "")
-    .join("\n");
+	// AgentMessage = Message | CustomAgentMessages[...] — custom members (e.g.
+	// BashExecutionMessage) have no `content` or non-array shapes, so read defensively.
+	const content = (message as { content?: unknown } | null)?.content;
+	if (!Array.isArray(content)) return "";
+	const parts = content as Array<{ type?: string; thinking?: string }>;
+	return parts
+		.filter((c) => c.type === "thinking")
+		.map((c) => c.thinking ?? "")
+		.join("\n");
 }
 
 /** Read hideThinkingBlock from ~/.pi/agent/settings.json (never write). */
 function readHideThinkingBlock(): boolean {
-  try {
-    const agentDir = process.env.PI_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
-    const raw = JSON.parse(fs.readFileSync(path.join(agentDir, "settings.json"), "utf8")) as {
-      hideThinkingBlock?: boolean;
-    };
-    return raw.hideThinkingBlock ?? false;
-  } catch {
-    return false;
-  }
+	try {
+		const agentDir =
+			process.env.PI_AGENT_DIR ?? path.join(os.homedir(), ".pi", "agent");
+		const raw = JSON.parse(
+			fs.readFileSync(path.join(agentDir, "settings.json"), "utf8"),
+		) as {
+			hideThinkingBlock?: boolean;
+		};
+		return raw.hideThinkingBlock ?? false;
+	} catch {
+		return false;
+	}
 }
 
 /** Full accumulated think text: completed blocks + the current block. */
 function fullThinkText(): string {
-  return [...history, thinkText].join("\n");
+	return [...history, thinkText].join("\n");
 }
 
 /**
@@ -93,278 +100,310 @@ function fullThinkText(): string {
  * paste is treated as one event — the same guard pi-tui itself uses.
  */
 function isKeyReleaseOrRepeat(data: string): boolean {
-  if (data.includes("\x1b[200~")) return false;
-  return /:(?:2|3)[u~ABCDHF]/.test(data);
+	if (data.includes("\x1b[200~")) return false;
+	return /:(?:2|3)[u~ABCDHF]/.test(data);
 }
 
 /** Italic title line: "Thinking…" + hint, plus a dim reminder when needed. */
 function titleLine(theme: Theme, hint: string): string {
-  const title = theme.italic(theme.fg("accent", "Thinking…") + hint);
-  if (hideThinkingBlock) return title;
-  return title + theme.italic(theme.fg("dim", "  chat shows think · Ctrl+T hides"));
+	const title = theme.italic(theme.fg("accent", "Thinking…") + hint);
+	if (hideThinkingBlock) return title;
+	return (
+		title + theme.italic(theme.fg("dim", "  chat shows think · Ctrl+T hides"))
+	);
 }
 
 /** Overlay A (top-center panel): last MAX_LINES lines, no inner separator. */
 function renderTopPanel(theme: Theme, width: number): string[] {
-  const innerW = Math.max(1, width - 2);
-  const border = (s: string) => theme.fg("border", s);
-  const pad = (s: string) => truncateToWidth(s, innerW, "...", true);
-  // Think lines use the chat code-block color (mdCodeBlock) + 2-space indent,
-  // matching pi's markdown code-block idiom so think text reads as code.
-  const code = (s: string) => theme.fg("mdCodeBlock", s);
-  const rows: string[] = [];
-  rows.push(border("┌" + "─".repeat(innerW) + "┐"));
-  rows.push(border("│") + pad(titleLine(theme, " ⌃O 展开 · esc/x 关闭")) + border("│"));
-  const text = fullThinkText();
-  const lines = text ? text.split(/\r?\n/).slice(-MAX_LINES) : [];
-  if (lines.length === 0) {
-    rows.push(border("│") + pad(theme.fg("dim", " (no thinking yet)")) + border("│"));
-  } else {
-    for (const l of lines) rows.push(border("│") + pad(code("  " + l)) + border("│"));
-  }
-  rows.push(border("└" + "─".repeat(innerW) + "┘"));
-  return rows;
+	const innerW = Math.max(1, width - 2);
+	const border = (s: string) => theme.fg("border", s);
+	const pad = (s: string) => truncateToWidth(s, innerW, "...", true);
+	// Think lines use the chat code-block color (mdCodeBlock) + 2-space indent,
+	// matching pi's markdown code-block idiom so think text reads as code.
+	const code = (s: string) => theme.fg("mdCodeBlock", s);
+	const rows: string[] = [];
+	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
+	rows.push(
+		border("│") + pad(titleLine(theme, " ⌃O 展开 · esc/x 关闭")) + border("│"),
+	);
+	const text = fullThinkText();
+	const lines = text ? text.split(/\r?\n/).slice(-MAX_LINES) : [];
+	if (lines.length === 0) {
+		rows.push(
+			border("│") + pad(theme.fg("dim", " (no thinking yet)")) + border("│"),
+		);
+	} else {
+		for (const l of lines)
+			rows.push(border("│") + pad(code("  " + l)) + border("│"));
+	}
+	rows.push(border("└" + "─".repeat(innerW) + "┘"));
+	return rows;
 }
 
 /** Overlay B (centered full-text): every line, capped so the hint stays visible. */
 function renderFullPanel(theme: Theme, width: number): string[] {
-  const innerW = Math.max(1, width - 2);
-  const border = (s: string) => theme.fg("border", s);
-  const pad = (s: string) => truncateToWidth(s, innerW, "...", true);
-  // Think lines use the chat code-block color (mdCodeBlock) + 2-space indent,
-  // matching pi's markdown code-block idiom so think text reads as code.
-  const code = (s: string) => theme.fg("mdCodeBlock", s);
-  const rows: string[] = [];
-  rows.push(border("┌" + "─".repeat(innerW) + "┐"));
-  rows.push(border("│") + pad(titleLine(theme, "  ⌃O 收起 · esc/x 关闭")) + border("│"));
-  const text = fullThinkText();
-  const lines = text ? text.split(/\r?\n/) : [];
-  if (lines.length === 0) {
-    rows.push(border("│") + pad(theme.fg("dim", " (no thinking yet)")) + border("│"));
-  } else {
-    // maxHeight is 90% of terminal rows — cap the body so the hint (and the
-    // bottom border) are not hard-truncated by the TUI.
-    const termRows = tui?.terminal.rows ?? 40;
-    const maxBody = Math.max(2, Math.floor(termRows * 0.9) - 4);
-    const shown = lines.length > maxBody ? lines.slice(0, maxBody) : lines;
-    for (const l of shown) rows.push(border("│") + pad(code("  " + l)) + border("│"));
-    if (lines.length > maxBody) {
-      rows.push(border("│") + pad(theme.fg("dim", " …(更多内容超出)")) + border("│"));
-    }
-  }
-  rows.push(border("└" + "─".repeat(innerW) + "┘"));
-  return rows;
+	const innerW = Math.max(1, width - 2);
+	const border = (s: string) => theme.fg("border", s);
+	const pad = (s: string) => truncateToWidth(s, innerW, "...", true);
+	// Think lines use the chat code-block color (mdCodeBlock) + 2-space indent,
+	// matching pi's markdown code-block idiom so think text reads as code.
+	const code = (s: string) => theme.fg("mdCodeBlock", s);
+	const rows: string[] = [];
+	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
+	rows.push(
+		border("│") + pad(titleLine(theme, "  ⌃O 收起 · esc/x 关闭")) + border("│"),
+	);
+	const text = fullThinkText();
+	const lines = text ? text.split(/\r?\n/) : [];
+	if (lines.length === 0) {
+		rows.push(
+			border("│") + pad(theme.fg("dim", " (no thinking yet)")) + border("│"),
+		);
+	} else {
+		// maxHeight is 90% of terminal rows — cap the body so the hint (and the
+		// bottom border) are not hard-truncated by the TUI.
+		const termRows = tui?.terminal.rows ?? 40;
+		const maxBody = Math.max(2, Math.floor(termRows * 0.9) - 4);
+		const shown = lines.length > maxBody ? lines.slice(0, maxBody) : lines;
+		for (const l of shown)
+			rows.push(border("│") + pad(code("  " + l)) + border("│"));
+		if (lines.length > maxBody) {
+			rows.push(
+				border("│") + pad(theme.fg("dim", " …(更多内容超出)")) + border("│"),
+			);
+		}
+	}
+	rows.push(border("└" + "─".repeat(innerW) + "┘"));
+	return rows;
 }
 
 export default function (pi: ExtensionAPI): void {
-  // Streaming flag — guards escape consumption (never block stream-abort).
-  pi.on("agent_start", (_event, ctx) => {
-    if (ctx?.mode !== "tui") return;
-  });
-  // Set (or reset) the auto-hide timer; new think activity cancels it.
-  function armCloseTimer(): void {
-    if (closeTimer !== undefined) clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => {
-      closeTimer = undefined;
-      if (EMPTY_THINK_MODE === "hide" && !manuallyOpened) {
-        overlayA?.setHidden(true);
-      }
-    }, CLOSE_DELAY_MS);
-  }
+	// Streaming flag — guards escape consumption (never block stream-abort).
+	pi.on("agent_start", (_event, ctx) => {
+		if (ctx?.mode !== "tui") return;
+	});
+	// Set (or reset) the auto-hide timer; new think activity cancels it.
+	function armCloseTimer(): void {
+		if (closeTimer !== undefined) clearTimeout(closeTimer);
+		closeTimer = setTimeout(() => {
+			closeTimer = undefined;
+			if (EMPTY_THINK_MODE === "hide" && !manuallyOpened) {
+				overlayA?.setHidden(true);
+			}
+		}, CLOSE_DELAY_MS);
+	}
 
-  pi.on("agent_settled", (_event, ctx) => {
-    if (ctx?.mode !== "tui") return;
-    // Hide once the turn has been idle for CLOSE_DELAY_MS; any new think
-    // activity cancels the timer and re-shows the panel.
-    armCloseTimer();
-  });
+	pi.on("agent_settled", (_event, ctx) => {
+		if (ctx?.mode !== "tui") return;
+		// Hide once the turn has been idle for CLOSE_DELAY_MS; any new think
+		// activity cancels the timer and re-shows the panel.
+		armCloseTimer();
+	});
 
-  // Keep thinking-enabled in sync with every level change (top-level subscription).
-  pi.on("thinking_level_select", (event, ctx) => {
-    if (ctx?.mode !== "tui") return;
-    thinkingEnabled = event.level !== "off";
-    if (!thinkingEnabled) {
-      // Unmount + reset.
-      if (closeTimer !== undefined) {
-        clearTimeout(closeTimer);
-        closeTimer = undefined;
-      }
-      overlayA?.hide();
-      overlayB?.hide();
-      overlayA = undefined;
-      overlayB = undefined;
-      fullOverlayOpen = false;
-      manuallyOpened = false;
-    } else if (overlayA === undefined) {
-      mountOverlays(ctx);
-    }
-    tui?.requestRender();
-  });
+	// Keep thinking-enabled in sync with every level change (top-level subscription).
+	pi.on("thinking_level_select", (event, ctx) => {
+		if (ctx?.mode !== "tui") return;
+		thinkingEnabled = event.level !== "off";
+		if (!thinkingEnabled) {
+			// Unmount + reset.
+			if (closeTimer !== undefined) {
+				clearTimeout(closeTimer);
+				closeTimer = undefined;
+			}
+			overlayA?.hide();
+			overlayB?.hide();
+			overlayA = undefined;
+			overlayB = undefined;
+			fullOverlayOpen = false;
+			manuallyOpened = false;
+		} else if (overlayA === undefined) {
+			mountOverlays(ctx);
+		}
+		tui?.requestRender();
+	});
 
-  // Capture: message_update always carries the COMPLETE thinking text.
-  pi.on("message_update", (event, ctx) => {
-    if (ctx?.mode !== "tui") return;
-    if (!thinkingEnabled) return;
-    const t = event.assistantMessageEvent.type;
-    if (!t.startsWith("thinking_")) return;
-    if (t === "thinking_start") {
-      // A new block is starting — rotate the finished one into history.
-      if (thinkText) {
-        history.push(thinkText);
-        thinkText = "";
-      }
-    } else {
-      thinkText = extractThinking(event.message);
-    }
-    if (t === "thinking_end") {
-      // Thinking finished — arm the auto-hide timer (measured from the actual
-      // end, robust to event order around agent_settled).
-      if (closeTimer === undefined) armCloseTimer();
-    } else {
-      // thinking_start / thinking_delta — active thinking cancels a pending
-      // auto-hide.
-      if (closeTimer !== undefined) {
-        clearTimeout(closeTimer);
-        closeTimer = undefined;
-      }
-    }
-    overlayA?.setHidden(false);
-    tui?.requestRender();
-  });
+	// Capture: message_update always carries the COMPLETE thinking text.
+	pi.on("message_update", (event, ctx) => {
+		if (ctx?.mode !== "tui") return;
+		if (!thinkingEnabled) return;
+		const t = event.assistantMessageEvent.type;
+		if (!t.startsWith("thinking_")) return;
+		if (t === "thinking_start") {
+			// A new block is starting — rotate the finished one into history.
+			if (thinkText) {
+				history.push(thinkText);
+				thinkText = "";
+			}
+		} else {
+			thinkText = extractThinking(event.message);
+		}
+		if (t === "thinking_end") {
+			// Thinking finished — arm the auto-hide timer (measured from the actual
+			// end, robust to event order around agent_settled).
+			if (closeTimer === undefined) armCloseTimer();
+		} else {
+			// thinking_start / thinking_delta — active thinking cancels a pending
+			// auto-hide.
+			if (closeTimer !== undefined) {
+				clearTimeout(closeTimer);
+				closeTimer = undefined;
+			}
+		}
+		// Don't re-show the small panel behind an open full-text overlay.
+		if (!fullOverlayOpen) overlayA?.setHidden(false);
+		tui?.requestRender();
+	});
 
-  // Reset module state + (re)register the key listener on each session.
-  pi.on("session_start", (_event, ctx) => {
-    if (ctx?.mode !== "tui") return;
+	// Reset module state + (re)register the key listener on each session.
+	pi.on("session_start", (_event, ctx) => {
+		if (ctx?.mode !== "tui") return;
 
-    // Reset module state that survived the previous in-process session.
-    if (closeTimer !== undefined) {
-      clearTimeout(closeTimer);
-      closeTimer = undefined;
-    }
-    tui = undefined;
-    overlayA = undefined;
-    overlayB = undefined;
-    fullOverlayOpen = false;
-    manuallyOpened = false;
-    thinkText = "";
-    history = [];
-    hideThinkingBlock = readHideThinkingBlock();
-    thinkingEnabled = (ctx.thinkingLevel ?? "off") !== "off";
+		// Reset module state that survived the previous in-process session.
+		if (closeTimer !== undefined) {
+			clearTimeout(closeTimer);
+			closeTimer = undefined;
+		}
+		tui = undefined;
+		overlayA = undefined;
+		overlayB = undefined;
+		fullOverlayOpen = false;
+		manuallyOpened = false;
+		thinkText = "";
+		history = [];
+		hideThinkingBlock = readHideThinkingBlock();
+		thinkingEnabled = (ctx.thinkingLevel ?? "off") !== "off";
 
-    // (Re)register the key listener; tear down the previous session's one.
-    if (inputUnsub) {
-      inputUnsub();
-      inputUnsub = null;
-    }
-    inputUnsub = ctx.ui.onTerminalInput((data) => {
-      // Kitty-protocol release/repeat events match the same keys — ignore them
-      // so each keypress fires exactly once (fixes the ctrl+o double-toggle).
-      if (isKeyReleaseOrRepeat(data)) return undefined;
-      if (matchesKey(data, "ctrl+o")) {
-        if (!thinkingEnabled) {
-          ctx.ui.notify("Think panel: thinking is off", "info");
-          return { consume: true };
-        }
-        if (fullOverlayOpen) {
-          overlayB?.setHidden(true);
-          fullOverlayOpen = false;
-        } else {
-          overlayB?.setHidden(false);
-          fullOverlayOpen = true;
-          manuallyOpened = true; // opening counts as manual — auto-hide stands down
-          overlayA?.setHidden(false); // expanding also ensures A is visible
-        }
-        return { consume: true };
-      }
-      if (matchesKey(data, "x") && (fullOverlayOpen || overlayA?.isHidden() === false)) {
-        overlayB?.setHidden(true);
-        fullOverlayOpen = false;
-        overlayA?.setHidden(true);
-        manuallyOpened = false;
-        return { consume: true };
-      }
-      if (matchesKey(data, "escape")) {
-        if (fullOverlayOpen) {
-          overlayB?.setHidden(true);
-          fullOverlayOpen = false;
-          return { consume: true };
-        }
-        return undefined; // B is closed — pass through (never block stream-abort)
-      }
-      return undefined;
-    });
+		// (Re)register the key listener; tear down the previous session's one.
+		if (inputUnsub) {
+			inputUnsub();
+			inputUnsub = null;
+		}
+		inputUnsub = ctx.ui.onTerminalInput((data) => {
+			// Kitty-protocol release/repeat events match the same keys — ignore them
+			// so each keypress fires exactly once (fixes the ctrl+o double-toggle).
+			if (isKeyReleaseOrRepeat(data)) return undefined;
+			if (matchesKey(data, "ctrl+o")) {
+				if (!thinkingEnabled) {
+					ctx.ui.notify("Think panel: thinking is off", "info");
+					return { consume: true };
+				}
+				if (fullOverlayOpen) {
+					overlayB?.setHidden(true);
+					fullOverlayOpen = false;
+					overlayA?.setHidden(false); // collapse back onto the small panel
+				} else {
+					overlayB?.setHidden(false);
+					fullOverlayOpen = true;
+					manuallyOpened = true; // opening counts as manual — auto-hide stands down
+					overlayA?.setHidden(true); // hide A so it doesn't show through behind B
+				}
+				return { consume: true };
+			}
+			if (
+				matchesKey(data, "x") &&
+				(fullOverlayOpen || overlayA?.isHidden() === false)
+			) {
+				overlayB?.setHidden(true);
+				fullOverlayOpen = false;
+				overlayA?.setHidden(true);
+				manuallyOpened = false;
+				return { consume: true };
+			}
+			if (matchesKey(data, "escape")) {
+				if (fullOverlayOpen) {
+					overlayB?.setHidden(true);
+					fullOverlayOpen = false;
+					overlayA?.setHidden(false); // collapse back onto the small panel
+					return { consume: true };
+				}
+				return undefined; // B is closed — pass through (never block stream-abort)
+			}
+			return undefined;
+		});
 
-    // Mount the overlays once per session (visibility toggled afterwards).
-    if (thinkingEnabled) mountOverlays(ctx);
-  });
+		// Mount the overlays once per session (visibility toggled afterwards).
+		if (thinkingEnabled) mountOverlays(ctx);
+	});
 
-  pi.on("session_shutdown", (_event, ctx) => {
-    if (ctx?.mode !== "tui") return;
-    if (inputUnsub) {
-      inputUnsub();
-      inputUnsub = null;
-    }
-    if (closeTimer !== undefined) {
-      clearTimeout(closeTimer);
-      closeTimer = undefined;
-    }
-    overlayA?.setHidden(true);
-    overlayB?.setHidden(true);
-    overlayA = undefined;
-    overlayB = undefined;
-    fullOverlayOpen = false;
-    tui = undefined;
-  });
+	pi.on("session_shutdown", (_event, ctx) => {
+		if (ctx?.mode !== "tui") return;
+		if (inputUnsub) {
+			inputUnsub();
+			inputUnsub = null;
+		}
+		if (closeTimer !== undefined) {
+			clearTimeout(closeTimer);
+			closeTimer = undefined;
+		}
+		overlayA?.setHidden(true);
+		overlayB?.setHidden(true);
+		overlayA = undefined;
+		overlayB = undefined;
+		fullOverlayOpen = false;
+		tui = undefined;
+	});
 
-  // Mount both overlays. ctx.ui.custom resolves only when done() is called,
-  // so do NOT await it — a persistent overlay never calls done().
-  function mountOverlays(ctx: ExtensionContext): void {
-    // Overlay A — top-center panel: created once, visibility toggled only.
-    void ctx.ui.custom(
-      (t, theme) => {
-        tui = t;
-        return {
-          dispose() {},
-          invalidate() {
-            t.requestRender();
-          },
-          render(width: number): string[] {
-            return renderTopPanel(theme, width);
-          },
-        };
-      },
-      {
-        overlay: true,
-        overlayOptions: { anchor: "top-left", offsetX: 1, offsetY: 1, width: PANEL_WIDTH_PCT, nonCapturing: true },
-        onHandle: (h) => {
-          overlayA = h;
-          if (EMPTY_THINK_MODE === "hide") h.setHidden(true);
-        },
-      },
-    );
+	// Mount both overlays. ctx.ui.custom resolves only when done() is called,
+	// so do NOT await it — a persistent overlay never calls done().
+	function mountOverlays(ctx: ExtensionContext): void {
+		// Overlay A — top-center panel: created once, visibility toggled only.
+		void ctx.ui.custom(
+			(t, theme) => {
+				tui = t;
+				return {
+					dispose() {},
+					invalidate() {
+						t.requestRender();
+					},
+					render(width: number): string[] {
+						return renderTopPanel(theme, width);
+					},
+				};
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "top-left",
+					offsetX: 1,
+					offsetY: 1,
+					width: PANEL_WIDTH_PCT,
+					nonCapturing: true,
+				},
+				onHandle: (h) => {
+					overlayA = h;
+					if (EMPTY_THINK_MODE === "hide") h.setHidden(true);
+				},
+			},
+		);
 
-    // Overlay B — centered full-text overlay, hidden until ctrl+o.
-    void ctx.ui.custom(
-      (t, theme) => {
-        tui = t;
-        return {
-          dispose() {},
-          invalidate() {
-            t.requestRender();
-          },
-          render(width: number): string[] {
-            return renderFullPanel(theme, width);
-          },
-        };
-      },
-      {
-        overlay: true,
-        overlayOptions: { anchor: "center", width: "75%", maxHeight: "90%", margin: { top: 1 }, nonCapturing: true },
-        onHandle: (h) => {
-          overlayB = h;
-          h.setHidden(true);
-        },
-      },
-    );
-  }
+		// Overlay B — centered full-text overlay, hidden until ctrl+o.
+		void ctx.ui.custom(
+			(t, theme) => {
+				tui = t;
+				return {
+					dispose() {},
+					invalidate() {
+						t.requestRender();
+					},
+					render(width: number): string[] {
+						return renderFullPanel(theme, width);
+					},
+				};
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "center",
+					width: "75%",
+					maxHeight: "90%",
+					margin: { top: 1 },
+					nonCapturing: true,
+				},
+				onHandle: (h) => {
+					overlayB = h;
+					h.setHidden(true);
+				},
+			},
+		);
+	}
 }
