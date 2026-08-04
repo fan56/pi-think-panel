@@ -12,8 +12,8 @@
  *   ctrl+o  toggle full-text overlay B (thinking off → info notify)
  *   x       close B + hide A (consumed only while a panel is visible)
  *   escape  collapse B only (never blocks stream-abort)
- * Overlay A is visible while the agent is thinking and auto-hides 5s after
- * the turn settles (EMPTY_THINK_MODE "hide", unless manually opened via
+ * Overlay A is visible while the agent is thinking and auto-hides 10s after
+ * thinking ends / the turn settles (EMPTY_THINK_MODE "hide", unless manually opened via
  * ctrl+o). If hideThinkingBlock is not enabled in settings, the title shows
  * a reminder that think text is also visible in chat (Ctrl+T hides it).
  * Never writes user settings.
@@ -31,9 +31,11 @@ import * as path from "path";
 const PANEL_WIDTH_PCT = "90%";
 // How many lines of think text overlay A shows (history tail + current block).
 const MAX_LINES = 10;
+// Auto-hide delay (ms) after thinking ends / the turn settles.
+const CLOSE_DELAY_MS = 10000;
 
 // What to do when no thinking is happening: "last" keeps overlay A visible
-// with the last think text; "hide" (default) auto-hides it 5s after the turn
+// with the last think text; "hide" (default) auto-hides it 10s after the turn
 // settles. Change this and /reload to apply.
 const EMPTY_THINK_MODE: "last" | "hide" = "hide";
 
@@ -79,6 +81,20 @@ function readHideThinkingBlock(): boolean {
 /** Full accumulated think text: completed blocks + the current block. */
 function fullThinkText(): string {
   return [...history, thinkText].join("\n");
+}
+
+/**
+ * With the Kitty keyboard protocol active (flag 2), key release/repeat events
+ * are delivered too, and pi-tui's matchesKey() matches on codepoint+modifier
+ * regardless of event type — without filtering, ctrl+o would fire on press AND
+ * release and double-toggle overlay B (the "flash" bug). pi-tui's own
+ * isKeyRelease/isKeyRepeat are not exported from the package barrel, so check
+ * inline. Bracketed paste can contain these patterns (e.g. MAC addresses), so
+ * paste is treated as one event — the same guard pi-tui itself uses.
+ */
+function isKeyReleaseOrRepeat(data: string): boolean {
+  if (data.includes("\x1b[200~")) return false;
+  return /:(?:2|3)[u~ABCDHF]/.test(data);
 }
 
 /** Italic title line: "Thinking…" + hint, plus a dim reminder when needed. */
@@ -145,18 +161,22 @@ export default function (pi: ExtensionAPI): void {
   pi.on("agent_start", (_event, ctx) => {
     if (ctx?.mode !== "tui") return;
   });
-  pi.on("agent_settled", (_event, ctx) => {
-    if (ctx?.mode !== "tui") return;
-    // 5s cooldown: any new think activity cancels this timer and re-shows the
-    // panel, so overlay A stays up across runs of one turn and only hides
-    // once the whole turn has been idle for 5s.
+  // Set (or reset) the auto-hide timer; new think activity cancels it.
+  function armCloseTimer(): void {
     if (closeTimer !== undefined) clearTimeout(closeTimer);
     closeTimer = setTimeout(() => {
       closeTimer = undefined;
       if (EMPTY_THINK_MODE === "hide" && !manuallyOpened) {
         overlayA?.setHidden(true);
       }
-    }, 5000);
+    }, CLOSE_DELAY_MS);
+  }
+
+  pi.on("agent_settled", (_event, ctx) => {
+    if (ctx?.mode !== "tui") return;
+    // Hide once the turn has been idle for CLOSE_DELAY_MS; any new think
+    // activity cancels the timer and re-shows the panel.
+    armCloseTimer();
   });
 
   // Keep thinking-enabled in sync with every level change (top-level subscription).
@@ -196,10 +216,17 @@ export default function (pi: ExtensionAPI): void {
     } else {
       thinkText = extractThinking(event.message);
     }
-    // Any think activity keeps the panel up and cancels a pending auto-hide.
-    if (closeTimer !== undefined) {
-      clearTimeout(closeTimer);
-      closeTimer = undefined;
+    if (t === "thinking_end") {
+      // Thinking finished — arm the auto-hide timer (measured from the actual
+      // end, robust to event order around agent_settled).
+      if (closeTimer === undefined) armCloseTimer();
+    } else {
+      // thinking_start / thinking_delta — active thinking cancels a pending
+      // auto-hide.
+      if (closeTimer !== undefined) {
+        clearTimeout(closeTimer);
+        closeTimer = undefined;
+      }
     }
     overlayA?.setHidden(false);
     tui?.requestRender();
@@ -230,6 +257,9 @@ export default function (pi: ExtensionAPI): void {
       inputUnsub = null;
     }
     inputUnsub = ctx.ui.onTerminalInput((data) => {
+      // Kitty-protocol release/repeat events match the same keys — ignore them
+      // so each keypress fires exactly once (fixes the ctrl+o double-toggle).
+      if (isKeyReleaseOrRepeat(data)) return undefined;
       if (matchesKey(data, "ctrl+o")) {
         if (!thinkingEnabled) {
           ctx.ui.notify("Think panel: thinking is off", "info");
