@@ -4,8 +4,9 @@
  * Captures the model's thinking from message_update events and renders:
  *   - overlay A: a top-left floating panel (PANEL_WIDTH_PCT) showing the
  *     last MAX_LINES lines of accumulated think text;
- *   - overlay B: a centered full-text overlay (75% width, 90% max height)
- *     toggled with ctrl+o to read the complete accumulated thinking.
+ *   - overlay B: a left-anchored full-text overlay (70% width, 90% max height)
+ *     toggled with ctrl+o to read the complete accumulated thinking; anchored
+ *     left so it stays clear of a right-side terminal sidebar.
  * Both overlays are nonCapturing so keyboard focus stays in the editor.
  *
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
@@ -393,8 +394,9 @@ export default function (pi: ExtensionAPI): void {
 			{
 				overlay: true,
 				overlayOptions: {
-					anchor: "center",
-					width: "75%",
+					anchor: "left-center",
+					offsetX: 2,
+					width: "70%",
 					maxHeight: "90%",
 					margin: { top: 1 },
 					nonCapturing: true,
