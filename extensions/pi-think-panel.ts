@@ -2,7 +2,7 @@
  * pi-think-panel — floating "think" content overlays.
  *
  * Captures the model's thinking from message_update events and renders:
- *   - overlay A: a top-center floating panel (PANEL_WIDTH_PCT) showing the
+ *   - overlay A: a top-left floating panel (PANEL_WIDTH_PCT) showing the
  *     last MAX_LINES lines of accumulated think text;
  *   - overlay B: a centered full-text overlay (75% width, 90% max height)
  *     toggled with ctrl+o to read the complete accumulated thinking.
@@ -26,8 +26,9 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-// Overlay A width — "45%" of terminal width. Tweak to taste, then /reload.
-const PANEL_WIDTH_PCT = "45%";
+// Overlay A width — "90%" of terminal width — near-full width with left/right
+// whitespace; tweak then /reload.
+const PANEL_WIDTH_PCT = "90%";
 // How many lines of think text overlay A shows (history tail + current block).
 const MAX_LINES = 10;
 
@@ -304,7 +305,7 @@ export default function (pi: ExtensionAPI): void {
       },
       {
         overlay: true,
-        overlayOptions: { anchor: "top-center", offsetY: 1, width: PANEL_WIDTH_PCT, nonCapturing: true },
+        overlayOptions: { anchor: "top-left", offsetX: 1, offsetY: 1, width: PANEL_WIDTH_PCT, nonCapturing: true },
         onHandle: (h) => {
           overlayA = h;
           if (EMPTY_THINK_MODE === "hide") h.setHidden(true);
