@@ -8,6 +8,7 @@ Toggleable "think" content panel for the pi coding agent TUI.
 - Auto-shows while the model is thinking (when thinking is enabled); when no thinking is happening it either hides (default `hide` mode) or keeps showing the last think text (`last` mode).
 - When `hideThinkingBlock` is not enabled in settings, the panel title row reminds you that think text is also visible in chat (press Ctrl+T to hide it there).
 - Completed think blocks are separated by a `------` divider in both views.
+- Sidebar-aware: when `pi-sidebar-panel` is installed AND enabled (terminal ≥ 100 cols), the overlays shrink to leave its right-hand band free. **Works standalone** — if the sidebar is absent (no `__piSidebarLayout` on `globalThis`) or the terminal is narrow, the panels simply use their full width; there is no dependency and no error.
 
 ## Keys
 
