@@ -45,6 +45,19 @@ const CLOSE_DELAY_MS = 10000;
 // settles. Change this and /reload to apply.
 const EMPTY_THINK_MODE: "last" | "hide" = "hide";
 
+// Layout published by pi-sidebar-panel via globalThis (same process, jiti's
+// shared global realm — no file/module dependency between the two). When the
+// sidebar would be drawn (enabled && terminal wide enough), overlays A/B
+// shrink out of its column band instead of being covered by it. Absent key ⇒
+// sidebar not installed ⇒ no adjustment.
+const SIDEBAR_LAYOUT_KEY = "__piSidebarLayout";
+
+interface SidebarLayout {
+	enabled: boolean;
+	width: number; // rendered sidebar width in cols
+	minWidth: number; // terminal cols below which the sidebar is not drawn
+}
+
 // Module-level state — survives in-process session switches (jiti cache).
 let thinkingEnabled = false;
 let hideThinkingBlock = false;
@@ -57,6 +70,48 @@ let tui: TUI | undefined;
 let overlayA: OverlayHandle | undefined;
 let overlayB: OverlayHandle | undefined;
 let inputUnsub: (() => void) | null = null;
+// Width currently mounted for overlays A/B (sidebar-aware); changed ⇒ remount.
+type OverlayWidth = number | `${number}%`;
+let mountedAWidth: OverlayWidth | undefined;
+let mountedBWidth: OverlayWidth | undefined;
+
+/** Layout registry read — never throws; absent ⇒ sidebar not installed. */
+function sidebarLayout(): SidebarLayout {
+	try {
+		const v = (globalThis as Record<string, unknown>)[SIDEBAR_LAYOUT_KEY];
+		if (v && typeof v === "object") {
+			const s = v as Partial<SidebarLayout>;
+			if (typeof s.enabled === "boolean" && typeof s.width === "number") {
+				return {
+					enabled: s.enabled,
+					width: s.width,
+					minWidth: typeof s.minWidth === "number" ? s.minWidth : 0,
+				};
+			}
+		}
+	} catch {
+		/* globalThis read must never throw */
+	}
+	return { enabled: false, width: 0, minWidth: 0 };
+}
+
+/** Overlay A width: full PANEL_WIDTH_PCT unless the sidebar would be drawn. */
+function overlayWidthA(): OverlayWidth {
+	const s = sidebarLayout();
+	const cols = tui?.terminal.columns ?? 0;
+	if (s.enabled && s.minWidth > 0 && cols >= s.minWidth)
+		return Math.max(20, cols - s.width - 3); // offsetX 1 + 2-col breathing room
+	return PANEL_WIDTH_PCT;
+}
+
+/** Overlay B width: "70%" unless the sidebar would be drawn. */
+function overlayWidthB(): OverlayWidth {
+	const s = sidebarLayout();
+	const cols = tui?.terminal.columns ?? 0;
+	if (s.enabled && s.minWidth > 0 && cols >= s.minWidth)
+		return Math.max(20, cols - s.width - 4); // offsetX 2 + 2-col breathing room
+	return "70%";
+}
 
 /** Extract the complete accumulated thinking text from an assistant message. */
 function extractThinking(message: unknown): string {
@@ -89,7 +144,11 @@ function readHideThinkingBlock(): boolean {
 
 /** Full accumulated think text: completed blocks + the current block. */
 function fullThinkText(): string {
-	return [...history, thinkText].join("\n");
+	// A "------" divider marks each COMPLETED block — it appears only between
+	// history entries, never before the still-streaming current block.
+	const completed = history.join("\n------\n");
+	if (!completed) return thinkText;
+	return thinkText ? `${completed}\n\n${thinkText}` : completed;
 }
 
 /**
@@ -136,7 +195,15 @@ function renderTopPanel(theme: Theme, width: number): string[] {
 		);
 	} else {
 		for (const l of lines)
-			rows.push(border("│") + pad(code("  " + l)) + border("│"));
+			rows.push(
+				border("│") +
+					pad(
+						l === "------"
+							? theme.fg("dim", "  ------")
+							: code("  " + l),
+					) +
+					border("│"),
+			);
 	}
 	rows.push(border("└" + "─".repeat(innerW) + "┘"));
 	return rows;
@@ -175,7 +242,15 @@ function renderFullPanel(theme: Theme, width: number): string[] {
 			);
 		}
 		for (const l of shown)
-			rows.push(border("│") + pad(code("  " + l)) + border("│"));
+			rows.push(
+				border("│") +
+					pad(
+						l === "------"
+							? theme.fg("dim", "  ------")
+							: code("  " + l),
+					) +
+					border("│"),
+			);
 	}
 	rows.push(border("└" + "─".repeat(innerW) + "┘"));
 	return rows;
@@ -255,6 +330,9 @@ export default function (pi: ExtensionAPI): void {
 		}
 		// Don't re-show the small panel behind an open full-text overlay.
 		if (!fullOverlayOpen) overlayA?.setHidden(false);
+		// Sidebar toggled or terminal resized? Re-mount with the corrected
+		// width (cheap no-op unless the width actually changed).
+		syncOverlayWidths(ctx);
 		tui?.requestRender();
 	});
 
@@ -270,6 +348,8 @@ export default function (pi: ExtensionAPI): void {
 		tui = undefined;
 		overlayA = undefined;
 		overlayB = undefined;
+		mountedAWidth = undefined;
+		mountedBWidth = undefined;
 		fullOverlayOpen = false;
 		manuallyOpened = false;
 		thinkText = "";
@@ -287,6 +367,7 @@ export default function (pi: ExtensionAPI): void {
 			// so each keypress fires exactly once (fixes the ctrl+o double-toggle).
 			if (isKeyReleaseOrRepeat(data)) return undefined;
 			if (matchesKey(data, "ctrl+o")) {
+				syncOverlayWidths(ctx); // sidebar may have toggled while idle
 				if (!thinkingEnabled) {
 					ctx.ui.notify("Think panel: thinking is off", "info");
 					return { consume: true };
@@ -350,10 +431,18 @@ export default function (pi: ExtensionAPI): void {
 	// Mount both overlays. ctx.ui.custom resolves only when done() is called,
 	// so do NOT await it — a persistent overlay never calls done().
 	function mountOverlays(ctx: ExtensionContext): void {
-		// Overlay A — top-center panel: created once, visibility toggled only.
+		mountOverlayA(ctx);
+		mountOverlayB(ctx);
+	}
+
+	function mountOverlayA(ctx: ExtensionContext): void {
+		mountedAWidth = overlayWidthA();
 		void ctx.ui.custom(
 			(t, theme) => {
 				tui = t;
+				// Terminal cols are only known once the TUI ref is captured —
+				// re-check the sidebar-aware width a tick after mounting.
+				queueMicrotask(() => syncOverlayWidths(ctx));
 				return {
 					dispose() {},
 					invalidate() {
@@ -370,7 +459,7 @@ export default function (pi: ExtensionAPI): void {
 					anchor: "top-left",
 					offsetX: 1,
 					offsetY: 1,
-					width: PANEL_WIDTH_PCT,
+					width: mountedAWidth,
 					nonCapturing: true,
 				},
 				onHandle: (h) => {
@@ -379,11 +468,14 @@ export default function (pi: ExtensionAPI): void {
 				},
 			},
 		);
+	}
 
-		// Overlay B — centered full-text overlay, hidden until ctrl+o.
+	function mountOverlayB(ctx: ExtensionContext): void {
+		mountedBWidth = overlayWidthB();
 		void ctx.ui.custom(
 			(t, theme) => {
 				tui = t;
+				queueMicrotask(() => syncOverlayWidths(ctx));
 				return {
 					dispose() {},
 					invalidate() {
@@ -399,7 +491,7 @@ export default function (pi: ExtensionAPI): void {
 				overlayOptions: {
 					anchor: "left-center",
 					offsetX: 2,
-					width: "70%",
+					width: mountedBWidth,
 					maxHeight: "90%",
 					margin: { top: 1 },
 					nonCapturing: true,
@@ -407,6 +499,90 @@ export default function (pi: ExtensionAPI): void {
 				onHandle: (h) => {
 					overlayB = h;
 					h.setHidden(true);
+				},
+			},
+		);
+	}
+
+	/** Re-mount overlays A/B when the sidebar-aware width changed. */
+	function syncOverlayWidths(ctx: ExtensionContext): void {
+		const wa = overlayWidthA();
+		if (wa !== mountedAWidth) remountOverlayA(ctx, wa);
+		const wb = overlayWidthB();
+		if (wb !== mountedBWidth) remountOverlayB(ctx, wb);
+	}
+
+	function remountOverlayA(ctx: ExtensionContext, width: OverlayWidth): void {
+		const old = overlayA;
+		const wasVisible = old?.isHidden() === false;
+		old?.hide();
+		overlayA = undefined;
+		mountedAWidth = width;
+		void ctx.ui.custom(
+			(t, theme) => {
+				tui = t;
+				queueMicrotask(() => syncOverlayWidths(ctx));
+				return {
+					dispose() {},
+					invalidate() {
+						t.requestRender();
+					},
+					render(width: number): string[] {
+						return renderTopPanel(theme, width);
+					},
+				};
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "top-left",
+					offsetX: 1,
+					offsetY: 1,
+					width,
+					nonCapturing: true,
+				},
+				onHandle: (h) => {
+					overlayA = h;
+					// Preserve visibility across the remount: mid-thinking stays
+					// visible; idle ("hide" mode) and open-B states stay hidden.
+					h.setHidden(fullOverlayOpen || !(wasVisible && thinkingEnabled));
+				},
+			},
+		);
+	}
+
+	function remountOverlayB(ctx: ExtensionContext, width: OverlayWidth): void {
+		const old = overlayB;
+		old?.hide();
+		overlayB = undefined;
+		mountedBWidth = width;
+		void ctx.ui.custom(
+			(t, theme) => {
+				tui = t;
+				queueMicrotask(() => syncOverlayWidths(ctx));
+				return {
+					dispose() {},
+					invalidate() {
+						t.requestRender();
+					},
+					render(width: number): string[] {
+						return renderFullPanel(theme, width);
+					},
+				};
+			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "left-center",
+					offsetX: 2,
+					width,
+					maxHeight: "90%",
+					margin: { top: 1 },
+					nonCapturing: true,
+				},
+				onHandle: (h) => {
+					overlayB = h;
+					h.setHidden(!fullOverlayOpen); // preserve open state
 				},
 			},
 		);
