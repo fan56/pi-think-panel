@@ -11,10 +11,11 @@
  * Both overlays are nonCapturing so keyboard focus stays in the editor.
  *
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
- *   ctrl+o  toggle full-text overlay B (thinking off → info notify)
- *   x       close B + hide A (consumed only while a panel is visible)
+ *   ctrl+o  toggle between overlay A (small) and overlay B (full text);
+ *           thinking off → info notify
  *   h       hide overlay A only (consumed while A is visible and B is closed)
- *   escape  collapse B only (never blocks stream-abort)
+ * Closing B is another ctrl+o press (back to A); esc and x are never
+ * consumed, so typing and stream-abort keep working.
  * Overlay A is visible while the agent is thinking and auto-hides 10s after
  * thinking ends / the turn settles (EMPTY_THINK_MODE "hide", unless manually opened via
  * ctrl+o). If hideThinkingBlock is not enabled in settings, the title shows
@@ -218,7 +219,7 @@ function renderFullPanel(theme: Theme, width: number): string[] {
 	const rows: string[] = [];
 	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
 	rows.push(
-		border("│") + pad(titleLine(theme, "  ⌃O 收起 · esc/x 关闭")) + border("│"),
+		border("│") + pad(titleLine(theme, "  ⌃O 收起")) + border("│"),
 	);
 	const text = fullThinkText();
 	const lines = text ? text.split(/\r?\n/) : [];
@@ -392,27 +393,6 @@ export default function (pi: ExtensionAPI): void {
 				overlayA.setHidden(true);
 				manuallyHidden = true;
 				return { consume: true };
-			}
-			if (
-				matchesKey(data, "x") &&
-				(fullOverlayOpen || overlayA?.isHidden() === false)
-			) {
-				overlayB?.setHidden(true);
-				fullOverlayOpen = false;
-				overlayA?.setHidden(true);
-				manuallyOpened = false;
-				manuallyHidden = false; // x = full close → auto-show resumes normally
-				return { consume: true };
-			}
-			if (matchesKey(data, "escape")) {
-				if (fullOverlayOpen) {
-					overlayB?.setHidden(true);
-					fullOverlayOpen = false;
-					// Collapse back onto the small panel (unless the user hid A).
-					if (!manuallyHidden) overlayA?.setHidden(false);
-					return { consume: true };
-				}
-				return undefined; // B is closed — pass through (never block stream-abort)
 			}
 			return undefined;
 		});
