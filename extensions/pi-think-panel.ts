@@ -5,8 +5,9 @@
  *   - overlay A: a top-left floating panel (PANEL_WIDTH_PCT) showing the
  *     last MAX_LINES lines of accumulated think text;
  *   - overlay B: a left-anchored full-text overlay (70% width, 90% max height)
- *     toggled with ctrl+o to read the complete accumulated thinking; anchored
- *     left so it stays clear of a right-side terminal sidebar.
+ *     toggled with ctrl+o to read the latest chunk of accumulated thinking,
+ *     auto-following new content as it streams in (a live "details" view);
+ *     anchored left so it stays clear of a right-side terminal sidebar.
  * Both overlays are nonCapturing so keyboard focus stays in the editor.
  *
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
@@ -162,17 +163,19 @@ function renderFullPanel(theme: Theme, width: number): string[] {
 		);
 	} else {
 		// maxHeight is 90% of terminal rows — cap the body so the hint (and the
-		// bottom border) are not hard-truncated by the TUI.
+		// bottom border) are not hard-truncated by the TUI. Show the TAIL so the
+		// view follows the newest content (a live "details" view — auto-scrolls
+		// down as new think lines stream in, same behavior as overlay A).
 		const termRows = tui?.terminal.rows ?? 40;
 		const maxBody = Math.max(2, Math.floor(termRows * 0.9) - 4);
-		const shown = lines.length > maxBody ? lines.slice(0, maxBody) : lines;
-		for (const l of shown)
-			rows.push(border("│") + pad(code("  " + l)) + border("│"));
+		const shown = lines.length > maxBody ? lines.slice(-maxBody) : lines;
 		if (lines.length > maxBody) {
 			rows.push(
-				border("│") + pad(theme.fg("dim", " …(更多内容超出)")) + border("│"),
+				border("│") + pad(theme.fg("dim", " …(更早内容已省略)")) + border("│"),
 			);
 		}
+		for (const l of shown)
+			rows.push(border("│") + pad(code("  " + l)) + border("│"));
 	}
 	rows.push(border("└" + "─".repeat(innerW) + "┘"));
 	return rows;
