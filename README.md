@@ -14,7 +14,7 @@ Toggleable "think" content panel for the pi coding agent TUI.
 | Key | Action |
 | --- | --- |
 | ctrl+o | Toggle between the small panel and the full-text overlay (thinking off → info notice) |
-| h | Hide the small panel (stays hidden until the next thinking block starts) |
+| ctrl+h | Hide the small panel (stays hidden until the next thinking block starts) |
 
 Note: ctrl+o is normally reserved for the tools panel (app.tools.expand); this extension takes it over — rebind it in your keybindings config if you prefer.
 

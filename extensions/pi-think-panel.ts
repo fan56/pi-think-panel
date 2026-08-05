@@ -13,7 +13,7 @@
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
  *   ctrl+o  toggle between overlay A (small) and overlay B (full text);
  *           thinking off → info notify
- *   h       hide overlay A only (consumed while A is visible and B is closed)
+ *   ctrl+h  hide overlay A only (consumed while A is visible and B is closed)
  * Closing B is another ctrl+o press (back to A); esc and x are never
  * consumed, so typing and stream-abort keep working.
  * Overlay A is visible while the agent is thinking and auto-hides 10s after
@@ -66,7 +66,7 @@ let hideThinkingBlock = false;
 let thinkText = ""; // current thinking block (complete text of the active message)
 let history: string[] = []; // completed thinking blocks from earlier messages
 let manuallyOpened = false; // opened via ctrl+o → auto-hide stands down
-let manuallyHidden = false; // h pressed → A stays hidden until the next thinking block
+let manuallyHidden = false; // ctrl+h pressed → A stays hidden until the next thinking block
 let fullOverlayOpen = false; // overlay B (full-text) visible
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
 let tui: TUI | undefined;
@@ -188,7 +188,7 @@ function renderTopPanel(theme: Theme, width: number): string[] {
 	const rows: string[] = [];
 	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
 	rows.push(
-		border("│") + pad(titleLine(theme, " ⌃O 展开 · h 隐藏")) + border("│"),
+		border("│") + pad(titleLine(theme, " ⌃O 展开 · ⌃H 隐藏")) + border("│"),
 	);
 	const text = fullThinkText();
 	const lines = text ? text.split(/\r?\n/).slice(-MAX_LINES) : [];
@@ -218,9 +218,7 @@ function renderFullPanel(theme: Theme, width: number): string[] {
 	const code = (s: string) => theme.fg("mdCodeBlock", s);
 	const rows: string[] = [];
 	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
-	rows.push(
-		border("│") + pad(titleLine(theme, "  ⌃O 收起")) + border("│"),
-	);
+	rows.push(border("│") + pad(titleLine(theme, "  ⌃O 收起")) + border("│"));
 	const text = fullThinkText();
 	const lines = text ? text.split(/\r?\n/) : [];
 	if (lines.length === 0) {
@@ -326,7 +324,7 @@ export default function (pi: ExtensionAPI): void {
 			}
 		}
 		// Don't re-show the small panel behind an open full-text overlay or a
-		// user-requested hide (h).
+		// user-requested hide (ctrl+h).
 		if (!fullOverlayOpen && !manuallyHidden) overlayA?.setHidden(false);
 		// Sidebar toggled or terminal resized? Re-mount with the corrected
 		// width (cheap no-op unless the width actually changed).
@@ -385,7 +383,7 @@ export default function (pi: ExtensionAPI): void {
 				return { consume: true };
 			}
 			if (
-				matchesKey(data, "h") &&
+				matchesKey(data, "ctrl+h") &&
 				!fullOverlayOpen &&
 				overlayA?.isHidden() === false
 			) {
