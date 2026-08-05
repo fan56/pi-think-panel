@@ -120,13 +120,13 @@ Note: ctrl+o is normally reserved for the tools panel (app.tools.expand); this e
 - Auto-shows while the model is thinking (when thinking is enabled); when no thinking is happening it either hides (default `hide` mode) or keeps showing the last think text (`last` mode).
 - ctrl+h toggles the small panel on/off.
 - When `hideThinkingBlock` is not enabled in settings, the panel title row reminds you that think text is also visible in chat (press Ctrl+T to hide it there).
-- Completed think blocks are separated by a `------` divider in both views.
+- Completed think blocks are separated by a `------` divider in both views — including a trailing divider after the just-finished current block.
 
 > - 捕获模型思考内容，在输入框上方带边框面板显示最近 10 行；ctrl+o 打开更宽的全文视图（80% 宽）。
 > - 模型思考时自动显示（思考开启时）；无思考时按 `EMPTY_THINK_MODE` 隐藏（默认 `hide`）或保留最后内容（`last`）。
 > - ctrl+h 切换小面板显示/隐藏。
 > - 设置中 `hideThinkingBlock` 未开启时，标题行提示"聊天区也显示 think，可按 Ctrl+T 隐藏"。
-> - 两个视图中，已完成的思考块之间用 `------` 分隔线区分。
+> - 两个视图中，已完成的思考块之间用 `------` 分隔线区分，刚结束的当前块末尾也会追加一条分隔线。
 
 ## Config / 配置
 

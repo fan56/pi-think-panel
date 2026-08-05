@@ -64,6 +64,7 @@ interface SidebarLayout {
 let thinkingEnabled = false;
 let hideThinkingBlock = false;
 let thinkText = ""; // current thinking block (complete text of the active message)
+let thinkEnded = false; // current block has finished → render a trailing ------ divider
 let history: string[] = []; // completed thinking blocks from earlier messages
 let manuallyOpened = false; // opened via ctrl+o → auto-hide stands down
 let manuallyHidden = false; // ctrl+h pressed → A manually hidden; ctrl+h again or a new block re-shows it
@@ -147,11 +148,12 @@ function readHideThinkingBlock(): boolean {
 
 /** Full accumulated think text: completed blocks + the current block. */
 function fullThinkText(): string {
-	// A "------" divider marks each COMPLETED block — it appears only between
-	// history entries, never before the still-streaming current block.
+	// A "------" divider marks each COMPLETED block — between history entries,
+	// and (when the current block has ended) after the current block too.
 	const completed = history.join("\n------\n");
-	if (!completed) return thinkText;
-	return thinkText ? `${completed}\n\n${thinkText}` : completed;
+	const current = thinkEnded && thinkText ? thinkText + "\n------" : thinkText;
+	if (!completed) return current;
+	return current ? `${completed}\n\n${current}` : completed;
 }
 
 /**
@@ -289,6 +291,7 @@ export default function (pi: ExtensionAPI): void {
 			fullOverlayOpen = false;
 			manuallyOpened = false;
 			manuallyHidden = false;
+			thinkEnded = false;
 		} else if (overlayA === undefined) {
 			mountOverlays(ctx);
 		}
@@ -307,9 +310,11 @@ export default function (pi: ExtensionAPI): void {
 				history.push(thinkText);
 				thinkText = "";
 			}
+			thinkEnded = false;
 			manuallyHidden = false; // fresh block → auto-show resumes
 		} else {
 			thinkText = extractThinking(event.message);
+			thinkEnded = t === "thinking_end";
 		}
 		if (t === "thinking_end") {
 			// Thinking finished — arm the auto-hide timer (measured from the actual
@@ -350,6 +355,7 @@ export default function (pi: ExtensionAPI): void {
 		manuallyOpened = false;
 		manuallyHidden = false;
 		thinkText = "";
+		thinkEnded = false;
 		history = [];
 		hideThinkingBlock = readHideThinkingBlock();
 		thinkingEnabled = (ctx.thinkingLevel ?? "off") !== "off";
