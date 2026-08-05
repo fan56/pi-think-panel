@@ -4,7 +4,7 @@
  * Captures the model's thinking from message_update events and renders:
  *   - overlay A: a top-left floating panel (PANEL_WIDTH_PCT) showing the
  *     last MAX_LINES lines of accumulated think text;
- *   - overlay B: a left-anchored full-text overlay (70% width, 90% max height)
+ *   - overlay B: a left-anchored full-text overlay (80% width, 90% max height)
  *     toggled with ctrl+o to read the latest chunk of accumulated thinking,
  *     auto-following new content as it streams in (a live "details" view);
  *     anchored left so it stays clear of a right-side terminal sidebar.
@@ -104,13 +104,13 @@ function overlayWidthA(): OverlayWidth {
 	return PANEL_WIDTH_PCT;
 }
 
-/** Overlay B width: "70%" unless the sidebar would be drawn. */
+/** Overlay B width: "80%" unless the sidebar would be drawn. */
 function overlayWidthB(): OverlayWidth {
 	const s = sidebarLayout();
 	const cols = tui?.terminal.columns ?? 0;
 	if (s.enabled && s.minWidth > 0 && cols >= s.minWidth)
 		return Math.max(20, cols - s.width - 4); // offsetX 2 + 2-col breathing room
-	return "70%";
+	return "80%";
 }
 
 /** Extract the complete accumulated thinking text from an assistant message. */
@@ -197,11 +197,7 @@ function renderTopPanel(theme: Theme, width: number): string[] {
 		for (const l of lines)
 			rows.push(
 				border("│") +
-					pad(
-						l === "------"
-							? theme.fg("dim", "  ------")
-							: code("  " + l),
-					) +
+					pad(l === "------" ? theme.fg("dim", "  ------") : code("  " + l)) +
 					border("│"),
 			);
 	}
@@ -244,11 +240,7 @@ function renderFullPanel(theme: Theme, width: number): string[] {
 		for (const l of shown)
 			rows.push(
 				border("│") +
-					pad(
-						l === "------"
-							? theme.fg("dim", "  ------")
-							: code("  " + l),
-					) +
+					pad(l === "------" ? theme.fg("dim", "  ------") : code("  " + l)) +
 					border("│"),
 			);
 	}
