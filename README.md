@@ -4,6 +4,10 @@ Toggleable "think" content panel for the pi coding agent TUI.
 
 > 可在 pi 编码代理 TUI 中切换显示的"思考内容"面板。
 
+## Demo / 演示
+
+![pi-think-panel demo](docs/think-panel-demo.gif)
+
 ## Why / 为什么做这个扩展
 
 Reasoning models now spend longer and longer "thinking" before they answer —
@@ -98,12 +102,12 @@ dependency, no error.
 | Key | Action |
 | --- | --- |
 | ctrl+o | Toggle between the small panel and the full-text overlay (thinking off → info notice) |
-| ctrl+h | Hide the small panel (stays hidden until the next thinking block starts) |
+| ctrl+h | Toggle the small panel on/off (stays hidden until toggled back or the next thinking block starts) |
 
 | 按键 | 行为 |
 | --- | --- |
 | ctrl+o | 小面板与大窗口（全文视图）之间切换（思考关闭时 → 提示信息） |
-| ctrl+h | 隐藏小面板（保持隐藏，直到下一个思考块开始） |
+| ctrl+h | 切换小面板显示/隐藏（保持状态，直到再次切换或下一个思考块开始） |
 
 Note: ctrl+o is normally reserved for the tools panel (app.tools.expand); this extension takes it over — rebind it in your keybindings config if you prefer.
 
@@ -114,11 +118,13 @@ Note: ctrl+o is normally reserved for the tools panel (app.tools.expand); this e
 
 - Captures the model's thinking and shows the last 10 lines in a bordered panel above the input editor; ctrl+o opens a wider full-text view (80% width).
 - Auto-shows while the model is thinking (when thinking is enabled); when no thinking is happening it either hides (default `hide` mode) or keeps showing the last think text (`last` mode).
+- ctrl+h toggles the small panel on/off.
 - When `hideThinkingBlock` is not enabled in settings, the panel title row reminds you that think text is also visible in chat (press Ctrl+T to hide it there).
 - Completed think blocks are separated by a `------` divider in both views.
 
 > - 捕获模型思考内容，在输入框上方带边框面板显示最近 10 行；ctrl+o 打开更宽的全文视图（80% 宽）。
 > - 模型思考时自动显示（思考开启时）；无思考时按 `EMPTY_THINK_MODE` 隐藏（默认 `hide`）或保留最后内容（`last`）。
+> - ctrl+h 切换小面板显示/隐藏。
 > - 设置中 `hideThinkingBlock` 未开启时，标题行提示"聊天区也显示 think，可按 Ctrl+T 隐藏"。
 > - 两个视图中，已完成的思考块之间用 `------` 分隔线区分。
 

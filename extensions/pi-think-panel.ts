@@ -13,7 +13,7 @@
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
  *   ctrl+o  toggle between overlay A (small) and overlay B (full text);
  *           thinking off → info notify
- *   ctrl+h  hide overlay A only (consumed while A is visible and B is closed)
+ *   ctrl+h  toggle overlay A (small panel) on/off (consumed while B is closed)
  * Closing B is another ctrl+o press (back to A); esc and x are never
  * consumed, so typing and stream-abort keep working.
  * Overlay A is visible while the agent is thinking and auto-hides 10s after
@@ -66,7 +66,7 @@ let hideThinkingBlock = false;
 let thinkText = ""; // current thinking block (complete text of the active message)
 let history: string[] = []; // completed thinking blocks from earlier messages
 let manuallyOpened = false; // opened via ctrl+o → auto-hide stands down
-let manuallyHidden = false; // ctrl+h pressed → A stays hidden until the next thinking block
+let manuallyHidden = false; // ctrl+h pressed → A manually hidden; ctrl+h again or a new block re-shows it
 let fullOverlayOpen = false; // overlay B (full-text) visible
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
 let tui: TUI | undefined;
@@ -385,11 +385,16 @@ export default function (pi: ExtensionAPI): void {
 			if (
 				matchesKey(data, "ctrl+h") &&
 				!fullOverlayOpen &&
-				overlayA?.isHidden() === false
+				overlayA !== undefined
 			) {
-				// Hide the small panel until the next thinking block.
-				overlayA.setHidden(true);
-				manuallyHidden = true;
+				// Toggle the small panel: visible → hide it, hidden → bring it back.
+				if (overlayA.isHidden()) {
+					overlayA.setHidden(false);
+					manuallyHidden = false;
+				} else {
+					overlayA.setHidden(true);
+					manuallyHidden = true;
+				}
 				return { consume: true };
 			}
 			return undefined;

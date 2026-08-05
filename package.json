@@ -1,0 +1,44 @@
+{
+  "name": "@aiwayds/pi-think-panel",
+  "version": "0.1.0",
+  "description": "pi-coding-agent extension — toggleable floating 'think' content panel showing live reasoning, ctrl+o for full-text view",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "think",
+    "reasoning",
+    "panel",
+    "tui"
+  ],
+  "license": "MIT",
+  "author": "fan56",
+  "main": "extensions/pi-think-panel.ts",
+  "files": [
+    "extensions",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fan56/pi-think-panel.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-tui": "*",
+    "jiti": "^2.4.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
