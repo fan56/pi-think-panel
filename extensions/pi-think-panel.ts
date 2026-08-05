@@ -13,6 +13,7 @@
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
  *   ctrl+o  toggle full-text overlay B (thinking off → info notify)
  *   x       close B + hide A (consumed only while a panel is visible)
+ *   h       hide overlay A only (consumed while A is visible and B is closed)
  *   escape  collapse B only (never blocks stream-abort)
  * Overlay A is visible while the agent is thinking and auto-hides 10s after
  * thinking ends / the turn settles (EMPTY_THINK_MODE "hide", unless manually opened via
@@ -64,6 +65,7 @@ let hideThinkingBlock = false;
 let thinkText = ""; // current thinking block (complete text of the active message)
 let history: string[] = []; // completed thinking blocks from earlier messages
 let manuallyOpened = false; // opened via ctrl+o → auto-hide stands down
+let manuallyHidden = false; // h pressed → A stays hidden until the next thinking block
 let fullOverlayOpen = false; // overlay B (full-text) visible
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
 let tui: TUI | undefined;
@@ -185,7 +187,7 @@ function renderTopPanel(theme: Theme, width: number): string[] {
 	const rows: string[] = [];
 	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
 	rows.push(
-		border("│") + pad(titleLine(theme, " ⌃O 展开 · esc/x 关闭")) + border("│"),
+		border("│") + pad(titleLine(theme, " ⌃O 展开 · h 隐藏")) + border("│"),
 	);
 	const text = fullThinkText();
 	const lines = text ? text.split(/\r?\n/).slice(-MAX_LINES) : [];
@@ -287,6 +289,7 @@ export default function (pi: ExtensionAPI): void {
 			overlayB = undefined;
 			fullOverlayOpen = false;
 			manuallyOpened = false;
+			manuallyHidden = false;
 		} else if (overlayA === undefined) {
 			mountOverlays(ctx);
 		}
@@ -305,6 +308,7 @@ export default function (pi: ExtensionAPI): void {
 				history.push(thinkText);
 				thinkText = "";
 			}
+			manuallyHidden = false; // fresh block → auto-show resumes
 		} else {
 			thinkText = extractThinking(event.message);
 		}
@@ -320,8 +324,9 @@ export default function (pi: ExtensionAPI): void {
 				closeTimer = undefined;
 			}
 		}
-		// Don't re-show the small panel behind an open full-text overlay.
-		if (!fullOverlayOpen) overlayA?.setHidden(false);
+		// Don't re-show the small panel behind an open full-text overlay or a
+		// user-requested hide (h).
+		if (!fullOverlayOpen && !manuallyHidden) overlayA?.setHidden(false);
 		// Sidebar toggled or terminal resized? Re-mount with the corrected
 		// width (cheap no-op unless the width actually changed).
 		syncOverlayWidths(ctx);
@@ -344,6 +349,7 @@ export default function (pi: ExtensionAPI): void {
 		mountedBWidth = undefined;
 		fullOverlayOpen = false;
 		manuallyOpened = false;
+		manuallyHidden = false;
 		thinkText = "";
 		history = [];
 		hideThinkingBlock = readHideThinkingBlock();
@@ -367,13 +373,24 @@ export default function (pi: ExtensionAPI): void {
 				if (fullOverlayOpen) {
 					overlayB?.setHidden(true);
 					fullOverlayOpen = false;
-					overlayA?.setHidden(false); // collapse back onto the small panel
+					// Collapse back onto the small panel (unless the user hid A).
+					if (!manuallyHidden) overlayA?.setHidden(false);
 				} else {
 					overlayB?.setHidden(false);
 					fullOverlayOpen = true;
 					manuallyOpened = true; // opening counts as manual — auto-hide stands down
 					overlayA?.setHidden(true); // hide A so it doesn't show through behind B
 				}
+				return { consume: true };
+			}
+			if (
+				matchesKey(data, "h") &&
+				!fullOverlayOpen &&
+				overlayA?.isHidden() === false
+			) {
+				// Hide the small panel until the next thinking block.
+				overlayA.setHidden(true);
+				manuallyHidden = true;
 				return { consume: true };
 			}
 			if (
@@ -384,13 +401,15 @@ export default function (pi: ExtensionAPI): void {
 				fullOverlayOpen = false;
 				overlayA?.setHidden(true);
 				manuallyOpened = false;
+				manuallyHidden = false; // x = full close → auto-show resumes normally
 				return { consume: true };
 			}
 			if (matchesKey(data, "escape")) {
 				if (fullOverlayOpen) {
 					overlayB?.setHidden(true);
 					fullOverlayOpen = false;
-					overlayA?.setHidden(false); // collapse back onto the small panel
+					// Collapse back onto the small panel (unless the user hid A).
+					if (!manuallyHidden) overlayA?.setHidden(false);
 					return { consume: true };
 				}
 				return undefined; // B is closed — pass through (never block stream-abort)
