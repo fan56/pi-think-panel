@@ -34,18 +34,19 @@ quietly hides itself again.
 
 ## Layout / 布局
 
-Small panel (overlay A) floats top-left while the model is thinking: last 10
-lines, auto-following the newest content, chat stays clean:
+Small panel (overlay A) floats top-left while the model is thinking: last 5
+lines by default (configurable via `PI_THINK_PANEL_MAX_LINES`), auto-following
+the newest content, chat stays clean:
 
-> 小面板（overlay A）：模型思考时浮在左上角，显示最近 10 行，跟随最新内容，
-> 聊天区保持干净。
+> 小面板（overlay A）：模型思考时浮在左上角，默认显示最近 5 行（可通过
+> `PI_THINK_PANEL_MAX_LINES` 配置），跟随最新内容，聊天区保持干净。
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │ ╭─ Thinking…  ⌃O 展开 · ⌃H 隐藏 ────────────────────────╮    │
 │ │  reasoning line 1                                     │    │
 │ │  reasoning line 2                                     │    │
-│ │  … (last 10 lines, follows newest)                    │    │
+│ │  … (last 5 lines, follows newest)                     │    │
 │ ╰───────────────────────────────────────────────────────╯    │
 │                                                              │
 │  chat history stays clean — think text never floods it       │
@@ -116,13 +117,13 @@ Note: ctrl+o is normally reserved for the tools panel (app.tools.expand); this e
 
 ## What it does / 功能
 
-- Captures the model's thinking and shows the last 10 lines in a bordered panel above the input editor; ctrl+o opens a wider full-text view (80% width).
+- Captures the model's thinking and shows the last N lines (default 5, configurable via `PI_THINK_PANEL_MAX_LINES`) in a bordered panel above the input editor; ctrl+o opens a wider full-text view (80% width).
 - Auto-shows while the model is thinking (when thinking is enabled); when no thinking is happening it either hides (default `hide` mode) or keeps showing the last think text (`last` mode).
 - ctrl+h toggles the small panel on/off.
 - When `hideThinkingBlock` is not enabled in settings, the panel title row reminds you that think text is also visible in chat (press Ctrl+T to hide it there).
 - Completed think blocks are separated by a `------` divider in both views — including a trailing divider after the just-finished current block.
 
-> - 捕获模型思考内容，在输入框上方带边框面板显示最近 10 行；ctrl+o 打开更宽的全文视图（80% 宽）。
+> - 捕获模型思考内容，在输入框上方带边框面板显示最近 N 行（默认 5 行，可配置 `PI_THINK_PANEL_MAX_LINES`）；ctrl+o 打开更宽的全文视图（80% 宽）。
 > - 模型思考时自动显示（思考开启时）；无思考时按 `EMPTY_THINK_MODE` 隐藏（默认 `hide`）或保留最后内容（`last`）。
 > - ctrl+h 切换小面板显示/隐藏。
 > - 设置中 `hideThinkingBlock` 未开启时，标题行提示"聊天区也显示 think，可按 Ctrl+T 隐藏"。
@@ -141,6 +142,34 @@ const EMPTY_THINK_MODE: "last" | "hide" = "hide";
 ```
 
 Change it and run `/reload` in pi.
+
+Auto-hide delay and panel background are configurable via env vars:
+
+```bash
+export PI_THINK_PANEL_CLOSE_DELAY_MS=5000   # hide 5s after thinking ends (default 1000)
+export PI_THINK_PANEL_BG=toolSuccessBg     # panel background (theme bg color key)
+export PI_THINK_PANEL_MAX_LINES=5          # small-panel line count (default 5)
+export PI_THINK_PANEL_MIN_TERM_ROWS=12     # hide small panel below this terminal height (default MAX_LINES+6)
+```
+
+`PI_THINK_PANEL_MAX_LINES` sets how many of the latest think lines the small
+panel shows (positive integer, default 5).
+
+`PI_THINK_PANEL_MIN_TERM_ROWS` is the minimum terminal height (rows) for the
+small panel: below it the panel hides automatically (and reappears when the
+terminal grows again) — handy when the window is dragged short or the font is
+zoomed in. Default is MAX_LINES + 6.
+
+> `PI_THINK_PANEL_MAX_LINES` 设置小面板显示的最新思考行数（正整数，默认 5）。
+>
+> `PI_THINK_PANEL_MIN_TERM_ROWS` 是小面板可见所需的最小终端高度（行数）：低于
+> 它面板自动隐藏（终端恢复后自动重现）——窗口拖矮或字体放大时很有用。默认
+> MAX_LINES + 6。
+
+`PI_THINK_PANEL_BG` accepts one of pi's theme bg color keys: `selectedBg` /
+`userMessageBg` / `customMessageBg` / `toolPendingBg` / `toolSuccessBg`
+(default) / `toolErrorBg`. Set env vars before starting pi (or before
+`/reload`), then `/reload` to apply.
 
 ## Install / update / 安装与更新
 

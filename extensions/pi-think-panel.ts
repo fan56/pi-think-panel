@@ -9,6 +9,8 @@
  *     auto-following new content as it streams in (a live "details" view);
  *     anchored left so it stays clear of a right-side terminal sidebar.
  * Both overlays are nonCapturing so keyboard focus stays in the editor.
+ * Panel background color is configurable via PI_THINK_PANEL_BG (one of pi's
+ * theme bg keys, default toolSuccessBg).
  *
  * Keys (ctx.ui.onTerminalInput — ctrl+o / escape / x are reserved keys):
  *   ctrl+o  toggle between overlay A (small) and overlay B (full text);
@@ -16,9 +18,10 @@
  *   ctrl+h  toggle overlay A (small panel) on/off (consumed while B is closed)
  * Closing B is another ctrl+o press (back to A); esc and x are never
  * consumed, so typing and stream-abort keep working.
- * Overlay A is visible while the agent is thinking and auto-hides 10s after
- * thinking ends / the turn settles (EMPTY_THINK_MODE "hide", unless manually opened via
- * ctrl+o). If hideThinkingBlock is not enabled in settings, the title shows
+ * Overlay A is visible while the agent is thinking and auto-hides
+ * CLOSE_DELAY_MS (default 1s) after thinking ends / the turn settles
+ * (EMPTY_THINK_MODE "hide", unless manually opened via ctrl+o). If
+ * hideThinkingBlock is not enabled in settings, the title shows
  * a reminder that think text is also visible in chat (Ctrl+T hides it).
  * Never writes user settings.
  */
@@ -38,13 +41,71 @@ import * as path from "path";
 // whitespace; tweak then /reload.
 const PANEL_WIDTH_PCT = "90%";
 // How many lines of think text overlay A shows (history tail + current block).
-const MAX_LINES = 10;
-// Auto-hide delay (ms) after thinking ends / the turn settles.
-const CLOSE_DELAY_MS = 10000;
+// Configurable via PI_THINK_PANEL_MAX_LINES (lines, default 5). Invalid
+// values fall back to the default. Read at module load — /reload to apply.
+const MAX_LINES = readMaxLines();
+
+function readMaxLines(): number {
+	const raw = process.env.PI_THINK_PANEL_MAX_LINES;
+	if (raw === undefined) return 5;
+	const n = Number(raw);
+	return Number.isInteger(n) && n > 0 ? n : 5;
+}
+// Min terminal rows for overlay A. When the terminal is resized shorter
+// than this (window dragged down / font zoomed in), the TUI's visible()
+// callback hides the small panel; it reappears automatically once the
+// terminal is tall enough again. Defaults to panel height + margin
+// (MAX_LINES + 6); override via PI_THINK_PANEL_MIN_TERM_ROWS.
+const MIN_TERM_ROWS = readMinTermRows();
+
+function readMinTermRows(): number {
+	const raw = process.env.PI_THINK_PANEL_MIN_TERM_ROWS;
+	if (raw === undefined) return MAX_LINES + 6;
+	const n = Number(raw);
+	return Number.isInteger(n) && n > 0 ? n : MAX_LINES + 6;
+}
+// Auto-hide delay (ms) after thinking ends / the turn settles. Configurable
+// via PI_THINK_PANEL_CLOSE_DELAY_MS (milliseconds, default 1000). Invalid
+// values fall back to the default. Read at module load — /reload to apply.
+const CLOSE_DELAY_MS = readCloseDelayMs();
+
+function readCloseDelayMs(): number {
+	const raw = process.env.PI_THINK_PANEL_CLOSE_DELAY_MS;
+	if (raw === undefined) return 1000;
+	const ms = Number(raw);
+	return Number.isFinite(ms) && ms >= 0 ? Math.floor(ms) : 1000;
+}
+
+// Background color for both overlays — one of pi's theme bg color keys
+// (see ThemeBg in pi-coding-agent: selectedBg / userMessageBg /
+// customMessageBg / toolPendingBg / toolSuccessBg / toolErrorBg).
+// Configurable via PI_THINK_PANEL_BG; default "toolSuccessBg". Read at
+// module load — /reload to apply.
+const PANEL_BG = readPanelBg();
+
+const THEME_BG_COLORS = [
+	"selectedBg",
+	"userMessageBg",
+	"customMessageBg",
+	"toolPendingBg",
+	"toolSuccessBg",
+	"toolErrorBg",
+] as const;
+type PanelBg = (typeof THEME_BG_COLORS)[number];
+
+function readPanelBg(): PanelBg {
+	const raw = process.env.PI_THINK_PANEL_BG;
+	if (
+		raw !== undefined &&
+		(THEME_BG_COLORS as readonly string[]).includes(raw)
+	)
+		return raw as PanelBg;
+	return "toolSuccessBg";
+}
 
 // What to do when no thinking is happening: "last" keeps overlay A visible
-// with the last think text; "hide" (default) auto-hides it 10s after the turn
-// settles. Change this and /reload to apply.
+// with the last think text; "hide" (default) auto-hides it CLOSE_DELAY_MS
+// after the turn settles. Change this and /reload to apply.
 const EMPTY_THINK_MODE: "last" | "hide" = "hide";
 
 // Layout published by pi-sidebar-panel via globalThis (same process, jiti's
@@ -182,51 +243,51 @@ function titleLine(theme: Theme, hint: string): string {
 /** Overlay A (top-center panel): last MAX_LINES lines, no inner separator. */
 function renderTopPanel(theme: Theme, width: number): string[] {
 	const innerW = Math.max(1, width - 2);
+	const bg = (s: string) => theme.bg(PANEL_BG, s);
 	const border = (s: string) => theme.fg("border", s);
 	const pad = (s: string) => truncateToWidth(s, innerW, "...", true);
+	// Rows are exactly `width` visible chars (pad=true + 2 border cols), so bg
+	// covers the full panel area including padding and borders.
+	const row = (s: string) => bg(border("│") + pad(s) + border("│"));
 	// Think lines use the chat code-block color (mdCodeBlock) + 2-space indent,
 	// matching pi's markdown code-block idiom so think text reads as code.
 	const code = (s: string) => theme.fg("mdCodeBlock", s);
 	const rows: string[] = [];
-	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
-	rows.push(
-		border("│") + pad(titleLine(theme, " ⌃O 展开 · ⌃H 隐藏")) + border("│"),
-	);
+	rows.push(bg(border("┌" + "─".repeat(innerW) + "┐")));
+	rows.push(row(titleLine(theme, " ⌃O 展开 · ⌃H 隐藏")));
 	const text = fullThinkText();
 	const lines = text ? text.split(/\r?\n/).slice(-MAX_LINES) : [];
 	if (lines.length === 0) {
-		rows.push(
-			border("│") + pad(theme.fg("dim", " (no thinking yet)")) + border("│"),
-		);
+		rows.push(row(theme.fg("dim", " (no thinking yet)")));
 	} else {
 		for (const l of lines)
 			rows.push(
-				border("│") +
-					pad(l === "------" ? theme.fg("dim", "  ------") : code("  " + l)) +
-					border("│"),
+				row(l === "------" ? theme.fg("dim", "  ------") : code("  " + l)),
 			);
 	}
-	rows.push(border("└" + "─".repeat(innerW) + "┘"));
+	rows.push(bg(border("└" + "─".repeat(innerW) + "┘")));
 	return rows;
 }
 
 /** Overlay B (centered full-text): every line, capped so the hint stays visible. */
 function renderFullPanel(theme: Theme, width: number): string[] {
 	const innerW = Math.max(1, width - 2);
+	const bg = (s: string) => theme.bg(PANEL_BG, s);
 	const border = (s: string) => theme.fg("border", s);
 	const pad = (s: string) => truncateToWidth(s, innerW, "...", true);
+	// Rows are exactly `width` visible chars (pad=true + 2 border cols), so bg
+	// covers the full panel area including padding and borders.
+	const row = (s: string) => bg(border("│") + pad(s) + border("│"));
 	// Think lines use the chat code-block color (mdCodeBlock) + 2-space indent,
 	// matching pi's markdown code-block idiom so think text reads as code.
 	const code = (s: string) => theme.fg("mdCodeBlock", s);
 	const rows: string[] = [];
-	rows.push(border("┌" + "─".repeat(innerW) + "┐"));
-	rows.push(border("│") + pad(titleLine(theme, "  ⌃O 收起")) + border("│"));
+	rows.push(bg(border("┌" + "─".repeat(innerW) + "┐")));
+	rows.push(row(titleLine(theme, "  ⌃O 收起")));
 	const text = fullThinkText();
 	const lines = text ? text.split(/\r?\n/) : [];
 	if (lines.length === 0) {
-		rows.push(
-			border("│") + pad(theme.fg("dim", " (no thinking yet)")) + border("│"),
-		);
+		rows.push(row(theme.fg("dim", " (no thinking yet)")));
 	} else {
 		// maxHeight is 90% of terminal rows — cap the body so the hint (and the
 		// bottom border) are not hard-truncated by the TUI. Show the TAIL so the
@@ -236,18 +297,14 @@ function renderFullPanel(theme: Theme, width: number): string[] {
 		const maxBody = Math.max(2, Math.floor(termRows * 0.9) - 4);
 		const shown = lines.length > maxBody ? lines.slice(-maxBody) : lines;
 		if (lines.length > maxBody) {
-			rows.push(
-				border("│") + pad(theme.fg("dim", " …(更早内容已省略)")) + border("│"),
-			);
+			rows.push(row(theme.fg("dim", " …(更早内容已省略)")));
 		}
 		for (const l of shown)
 			rows.push(
-				border("│") +
-					pad(l === "------" ? theme.fg("dim", "  ------") : code("  " + l)) +
-					border("│"),
+				row(l === "------" ? theme.fg("dim", "  ------") : code("  " + l)),
 			);
 	}
-	rows.push(border("└" + "─".repeat(innerW) + "┘"));
+	rows.push(bg(border("└" + "─".repeat(innerW) + "┘")));
 	return rows;
 }
 
@@ -459,6 +516,8 @@ export default function (pi: ExtensionAPI): void {
 					anchor: "top-left",
 					offsetX: 1,
 					offsetY: 1,
+					// Terminal too short → hide the panel (auto-restores on resize).
+					visible: (_cols, rows) => rows >= MIN_TERM_ROWS,
 					width: mountedAWidth,
 					nonCapturing: true,
 				},
@@ -538,6 +597,7 @@ export default function (pi: ExtensionAPI): void {
 					anchor: "top-left",
 					offsetX: 1,
 					offsetY: 1,
+					visible: (_cols, rows) => rows >= MIN_TERM_ROWS,
 					width,
 					nonCapturing: true,
 				},

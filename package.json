@@ -1,6 +1,6 @@
 {
   "name": "@aiwayds/pi-think-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "pi-coding-agent extension — toggleable floating 'think' content panel showing live reasoning, ctrl+o for full-text view",
   "keywords": [
     "pi-package",
@@ -13,6 +13,9 @@
   "license": "MIT",
   "author": "fan56",
   "main": "extensions/pi-think-panel.ts",
+  "pi": {
+    "extensions": ["extensions/pi-think-panel.ts"]
+  },
   "files": [
     "extensions",
     "README.md",
