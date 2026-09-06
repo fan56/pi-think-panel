@@ -14,7 +14,9 @@
   "author": "fan56",
   "main": "extensions/pi-think-panel.ts",
   "pi": {
-    "extensions": ["extensions/pi-think-panel.ts"]
+    "extensions": [
+      "extensions/pi-think-panel.ts"
+    ]
   },
   "files": [
     "extensions",
@@ -33,12 +35,14 @@
     "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*",
+    "@types/node": "^22.0.0",
     "jiti": "^2.4.0",
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.6.0"
   },
   "scripts": {
+    "smoke": "node smoke-test.cjs",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
