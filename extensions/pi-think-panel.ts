@@ -47,6 +47,24 @@ const MAX_RETAINED_CHARS = 4000;
 const VALID_LINES = [1, 3, 5, 7] as const;
 type LinesConfig = (typeof VALID_LINES)[number] | 0; // 0 = off
 
+// Widget background — one of pi's theme bg keys (light/dark adaptive).
+const THEME_BGS = [
+	"selectedBg",
+	"searchMatchBg",
+	"userMessageBg",
+	"customMessageBg",
+	"toolPendingBg",
+	"toolSuccessBg",
+	"toolErrorBg",
+] as const;
+type WidgetBg = (typeof THEME_BGS)[number];
+
+function normalizeBg(value: unknown): WidgetBg {
+	return typeof value === "string" && (THEME_BGS as readonly string[]).includes(value)
+		? (value as WidgetBg)
+		: "customMessageBg";
+}
+
 // ── Config (~/.pi/agent/think-panel.json) ─────────────────────────────────
 
 function agentDir(): string {
@@ -74,11 +92,11 @@ function normalizeLines(value: unknown): LinesConfig {
 	return 1;
 }
 
-function saveLines(lines: LinesConfig): void {
+function saveConfig(): void {
 	try {
 		fs.writeFileSync(
 			configPath(),
-			JSON.stringify({ lines }, null, 2) + "\n",
+			JSON.stringify({ lines, bg: bgKey }, null, 2) + "\n",
 			"utf8",
 		);
 	} catch {
@@ -89,6 +107,16 @@ function saveLines(lines: LinesConfig): void {
 // ── Module state (survives in-process session switches via jiti cache) ────
 
 let lines: LinesConfig = loadLines();
+let bgKey: WidgetBg = (() => {
+	try {
+		const raw = JSON.parse(fs.readFileSync(configPath(), "utf8")) as {
+			bg?: unknown;
+		};
+		return normalizeBg(raw.bg);
+	} catch {
+		return "customMessageBg";
+	}
+})();
 let tui: TUI | undefined;
 let blocks: string[] = []; // completed thinking blocks of the current agent run
 let blockText = ""; // the streaming block
@@ -134,17 +162,17 @@ function renderViewport(theme: Theme, width: number): string[] {
 	const window = wrapped.slice(-lines);
 	if (window.length === 0) return [];
 
-	// Row 0: prefix + the window's first line (prefix overlaps the head of the
-	// visible text — the tail below is pure). Tail-truncate every row.
+	// Every row is padded to exactly `width` visible cells and wrapped in the
+	// theme bg color, so the viewport reads as one solid band (light/dark
+	// adaptive). Rows longer than width are tail-truncated with "...".
+	const bg = (s: string) => theme.bg(bgKey, s);
+	const row = (s: string) => bg(truncateToWidth(s, width, "...", true));
 	const rows: string[] = [];
 	rows.push(
-		truncateToWidth(
-			theme.fg("accent", PREFIX) + theme.fg("mdCodeBlock", window[0]),
-			width,
-		),
+		row(theme.fg("accent", PREFIX) + theme.fg("mdCodeBlock", window[0])),
 	);
 	for (let i = 1; i < window.length; i++) {
-		rows.push(truncateToWidth(theme.fg("mdCodeBlock", window[i]), width));
+		rows.push(row(theme.fg("mdCodeBlock", window[i])));
 	}
 	return rows;
 }
@@ -223,21 +251,41 @@ export default function (pi: ExtensionAPI): void {
 		tui = undefined;
 	});
 
-	// /think-panel [1|3|5|7|off] — switch height, persisted.
+	// /think-panel [1|3|5|7|off] | bg <ThemeBg> — persisted.
 	pi.registerCommand("think-panel", {
 		description:
-			"Thinking viewport above the editor: /think-panel [1|3|5|7|off] (persisted)",
+			"Thinking viewport above the editor: /think-panel [1|3|5|7|off] | bg <selectedBg|searchMatchBg|userMessageBg|customMessageBg|toolPendingBg|toolSuccessBg|toolErrorBg> (persisted)",
 		handler: async (args, ctx) => {
-			const raw = (args ?? "").trim().toLowerCase();
-			if (raw === "" || raw === "status") {
+			const raw = (args ?? "").trim();
+			const lc = raw.toLowerCase();
+			if (lc === "" || lc === "status") {
 				const state = lines === 0 ? "off" : `${lines} line(s)`;
 				ctx.ui.notify(
-					`Think viewport: ${state}\nUsage: /think-panel [1|3|5|7|off]`,
+					`Think viewport: ${state}, bg ${bgKey}\nUsage: /think-panel [1|3|5|7|off] | bg <theme-bg-key>`,
 					"info",
 				);
 				return;
 			}
-			if (raw === "off" || raw === "0") {
+			if (lc.startsWith("bg ")) {
+				// Case-insensitive lookup against canonical camelCase keys.
+				const requested = raw.slice(3).trim();
+				const canonical = THEME_BGS.find(
+					(k) => k.toLowerCase() === requested.toLowerCase(),
+				);
+				if (!canonical) {
+					ctx.ui.notify(
+						`Think viewport: unknown bg "${requested}". Valid: ${THEME_BGS.join(" ")}`,
+						"warning",
+					);
+					return;
+				}
+				bgKey = canonical;
+				saveConfig();
+				ctx.ui.notify(`Think viewport bg: ${bgKey} (persisted)`, "info");
+				tui?.requestRender();
+				return;
+			}
+			if (lc === "off" || lc === "0") {
 				lines = 0;
 			} else {
 				const n = Number(raw);
@@ -250,7 +298,7 @@ export default function (pi: ExtensionAPI): void {
 				}
 				lines = n as LinesConfig;
 			}
-			saveLines(lines);
+			saveConfig();
 			// No state reset: renderViewport() reads `lines` on every render, so the
 			// new height applies on the next paint without a mid-stream blank.
 			ctx.ui.notify(

@@ -53,6 +53,9 @@ view. No thinking → zero rows, no space taken.
   to terminal width.
 - Heights **3 / 5 / 7** show more of the latest reasoning; row 0 keeps the
   `🧠Thinking:` prefix, rows below are pure continuation lines.
+- Every row is painted with a theme background key (default
+  `customMessageBg`) and padded to full width — the viewport reads as one
+  solid band, light/dark adaptive.
 
 > 默认 **1 行**：`🧠Thinking: <最新思考>`，超出终端宽度尾部截断。
 > **3 / 5 / 7 行**显示更多最新推理；首行保留 `🧠Thinking:` 前缀，其余为纯内容行。
@@ -60,17 +63,17 @@ view. No thinking → zero rows, no space taken.
 ## Command / 命令
 
 ```bash
-/think-panel           # show current height / 查看当前行数
+/think-panel           # show current settings / 查看当前配置
 /think-panel 3         # switch to 3 lines / 切换 3 行
 /think-panel 7         # switch to 7 lines / 切换 7 行
 /think-panel off       # disable the widget (0 rows) / 关闭 widget
+/think-panel bg toolPendingBg   # switch background theme key / 换底色
 ```
 
-The setting is persisted to `~/.pi/agent/think-panel.json` as
-`{"lines": N}` (`0` = off) and survives restarts.
+The settings are persisted to `~/.pi/agent/think-panel.json` as
+`{"lines": N, "bg": "customMessageBg"}` and survive restarts.
 
-> 设置持久化到 `~/.pi/agent/think-panel.json`（`{"lines": N}`，`0` = 关），
-> 重启后保持。
+> 设置持久化到 `~/.pi/agent/think-panel.json`，重启后保持。
 
 ## What it does / 功能
 
@@ -95,14 +98,18 @@ The setting is persisted to `~/.pi/agent/think-panel.json` as
 `~/.pi/agent/think-panel.json`:
 
 ```json
-{ "lines": 1 }
+{ "lines": 1, "bg": "customMessageBg" }
 ```
 
-Valid values: `1 | 3 | 5 | 7 | 0` (`0` = off). Prefer the `/think-panel`
-command — it validates and writes the same file.
+- `lines`: `1 | 3 | 5 | 7 | 0` (`0` = off)
+- `bg`: any pi theme bg key — `selectedBg` / `searchMatchBg` /
+  `userMessageBg` / `customMessageBg` (default) / `toolPendingBg` /
+  `toolSuccessBg` / `toolErrorBg`. Light/dark adaptive.
 
-> 合法值 `1 | 3 | 5 | 7 | 0`（`0` = 关）。推荐用 `/think-panel` 命令切换，
-> 会校验参数并写同一文件。
+Prefer the `/think-panel` command — it validates and writes the same file.
+
+> 推荐用 `/think-panel` 命令切换，会校验参数并写同一文件。底色为语义主题键，
+> 明暗主题自适应。
 
 ## Install / update / 安装与更新
 
