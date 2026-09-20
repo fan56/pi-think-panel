@@ -79,8 +79,9 @@ The setting is persisted to `~/.pi/agent/think-panel.json` as
   (expand tool output) and `ctrl+h` remain pi-native.
 - Lines are **visual lines** after ANSI-aware wrapping to the current terminal
   width — the view reflows on resize.
-- Shows while the model is thinking; the viewport clears when the turn
-  settles (`agent_settled`) or thinking is switched off.
+- Shows while the model is thinking; the viewport **auto-hides the moment
+  thinking stops** (`thinking_end`) and clears again on turn settle
+  (`agent_settled`, safety net) or when thinking is switched off.
 - Completed think blocks within a turn are separated by a blank line.
 
 > - 从 `message_update` 事件捕获实时思考，渲染在输入框上方 widget 槽位——

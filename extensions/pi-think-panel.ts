@@ -15,6 +15,10 @@
  * Lines are VISUAL lines after wrapping to the current terminal width
  * (ANSI-aware via pi-tui's wrapTextWithAnsi), so the view reflows on resize.
  *
+ * Shows while the model is thinking and **auto-hides the moment thinking
+ * stops** (thinking_end); a later block in the same turn re-shows it. The
+ * turn settle (agent_settled) remains a safety-net reset.
+ *
  * Configuration: /think-panel [1|3|5|7|off] — persisted to
  * ~/.pi/agent/think-panel.json as {"lines": N} (0 = off). With `off` (or no
  * active thinking) the widget renders zero rows and takes no space.
@@ -182,13 +186,17 @@ export default function (pi: ExtensionAPI): void {
 				blocks.push(blockText);
 				blockText = "";
 			}
+			thinkActive = true;
+		} else if (t === "thinking_end") {
+			// Thinking stopped → auto-hide immediately; a later block re-shows.
+			resetViewport();
 		} else {
 			blockText = extractThinking(event.message);
 			if (blockText.length > MAX_RETAINED_CHARS) {
 				blockText = blockText.slice(-MAX_RETAINED_CHARS);
 			}
+			thinkActive = true;
 		}
-		thinkActive = true;
 		tui?.requestRender();
 	});
 
